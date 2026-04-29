@@ -1,0 +1,361 @@
+# Test Strategy
+
+## Cilj testiranja
+
+Cilj testiranja sistema za treniranje i implementaciju AI chatbot asistenta na osnovu snimljenih poziva iz call centra je osigurati da sve funkcionalnosti sistema rade ispravno, pouzdano i sigurno u skladu sa definisanim zahtjevima i acceptance kriterijima.
+
+**Ciljevi su:**
+
+- Verificirati da funkcionalnosti unosa i uploada transkripata (fajl i ručni unos) rade ispravno, uključujući validaciju formata i pravilnu pohranu podataka u sistem.
+
+- Potvrditi da obrada transkripata (parsiranje, normalizacija i razdvajanje po ulogama) funkcioniše ispravno i da su podaci pripremljeni za dalju upotrebu.
+
+- Provjeriti da sistem adekvatno maskira osjetljive i lične podatke prije njihove obrade i pohrane, u skladu sa sigurnosnim i privatnosnim zahtjevima.
+
+- Verificirati da chatbot generiše relevantne i tačne odgovore na osnovu baze znanja, u skladu sa definisanim kriterijima tačnosti.
+
+- Osigurati da sistem pravilno prepoznaje situacije u kojima chatbot nije siguran u odgovor i da u tim slučajevima vrši preusmjeravanje komunikacije na ljudskog agenta bez gubitka konteksta.
+
+- Validirati funkcionalnosti za prijavu netačnih odgovora i obradu korisničkog feedback-a, uključujući evidentiranje i kasniju obradu od strane administratora.
+
+- Provjeriti da administratorski dio sistema omogućava pregled, validaciju i upravljanje transkriptima, pitanjima i prijavljenim problemima bez grešaka.
+
+- Potvrditi da su implementirani sigurnosni mehanizmi (HTTPS, autentifikacija i kontrola pristupa) ispravni i da neovlašteni korisnici ne mogu pristupiti zaštićenim dijelovima sistema.
+
+- Provjeriti performanse sistema, uključujući vrijeme odziva (manje od 3 sekunde u većini slučajeva) i stabilan rad pri većem broju istovremenih korisnika.
+
+- Osigurati da sistem radi stabilno i pouzdano, bez generisanja netačnih ili neprovjerenih odgovora, te da se pravilno ponaša u slučaju grešaka.
+
+- Provjeriti da korisnički interfejs omogućava jednostavno, intuitivno i jasno korištenje sistema za sve tipove korisnika (krajnji korisnici, agenti i administratori).
+
+## Nivoi testiranja 
+### Unit testiranje
+
+Unit testiranje provjerava ispravnost individualnih komponenti sistema izolovano od ostatka aplikacije. Fokus je na poslovnoj logici unutar pojedinih modula.
+
+| Atribut | Opis |
+|--------|------|
+| Cilj | Verificirati ispravnost pojedinačnih funkcija i klasa unutar modula |
+| Ko testira | Developeri (tokom razvoja) |
+| Kada | Kontinuirano tokom svakog sprinta, prije commita koda |
+| Alati | Jest (JavaScript/TypeScript), PyTest (Python backend) |
+| Pokrivenost | Cilj: minimalno 80% code coverage za poslovnu logiku |
+
+ Šta se testira u okviru unit testiranja:
+
+- **Authentication modul**  
+  Funkcija provjere kredencijala vraća ispravan token za validne podatke i grešku za nevalidne; funkcija generisanja i verifikacije JWT tokena; logika blokiranja naloga aktivira se tačno nakon 5 uzastopnih neuspjelih pokušaja (NFR-2)
+
+- **Transcript Management modul**  
+  Validacija formata fajla — TXT i PDF prolaze, ostali formati se odbijaju; provjera minimalne dužine teksta transkripta; validacija obaveznih polja forme za ručni unos (datum, identifikator agenta, sadržaj)
+
+- **Processing Pipeline modul**  
+  Normalizacijska funkcija uklanja suvišne razmake, standardizuje interpunkciju i uklanja nevalidne znakove bez promjene semantičkog značenja; parser ispravno identificira redove s oznakama *"Agent:"* i *"Korisnik:"* i segmentuje dijalog; funkcija maskiranja detektuje JMBG u svim formatima (13 cifara, s razmacima i bez), brojeve telefona (062, 061, 387...) i najčešće obrasce ličnih imena
+
+- **Knowledge Base modul**  
+  Funkcija generisanja embeddinga vraća vektor ispravnih dimenzija za zadani tekst; provjera da semantički slični tekstovi generiraju slične vektore
+
+- **Chatbot modul**  
+  Logika provjere praga pouzdanosti — odgovori ispod 70% trigiraju eskalaciju (NFR-6); funkcija koja formira prompt za LLM uključuje ispravan kontekst iz baze znanja
+
+- **Feedback modul**  
+  Ocjena se prihvata samo za validne vrijednosti; komentar se odbija ako je polje otvoreno ali prazno; prijava problema mora imati odabranu kategoriju da bi bila pohranjena
+---
+
+### Integraciono testiranje
+
+Integraciono testiranje verificira ispravnost komunikacije i razmjene podataka između više modula sistema koji zajedno ostvaruju određenu funkcionalnost.
+
+| Atribut | Opis |
+|--------|------|
+| Cilj | Verificirati da moduli ispravno komuniciraju i razmjenjuju podatke |
+| Ko testira | Developeri / QA tim |
+| Kada | Nakon završetka razvoja modula, na kraju svakog sprinta |
+| Alati | Supertest (API testiranje), Postman / Newman (automatizacija API testova) |
+
+ Šta se testira u okviru integracionog testiranja:
+
+- **Upload transkripta → Processing Pipeline**  
+  Uploadani TXT/PDF fajl ispravno prolazi normalizaciju teksta, razdvajanje po ulogama i maskiranje osjetljivih podataka; rezultat je strukturiran i spreman za embedding
+
+- **Processing Pipeline → Knowledge Base modul**  
+  Normalizovani i segmentirani tekst ispravno ulazi u proces generisanja embeddinga; vektori se pohranjuju u vektorsku bazu i mogu se dohvatiti semantičkom pretragom
+
+- **Chatbot modul → Knowledge Base → LLM API**  
+  Korisničko pitanje trigira semantičku pretragu u vektorskoj bazi; relevantan kontekst se šalje LLM-u kao dio prompta; LLM vraća odgovor koji sistem prikazuje korisniku
+
+- **Speech-to-Text API → Transcript Management**  
+  Uploadani audio fajl šalje se eksternom Speech-to-Text servisu; transkript se prima, prikazuje administratoru na pregled i pohranjuje nakon potvrde
+
+- **Authentication modul → Zaštićeni endpointi**  
+  JWT token se ispravno verificira za svaki zaštićeni API poziv; RBAC provjera blokira korisnika s pogrešnom ulogom (npr. korisnik ne može pozvati admin endpoint)
+
+- **Feedback modul → Database → Admin Dashboard**  
+  Ocjena i komentar korisnika se pohranjuju u bazu i ispravno prikazuju administratoru u pregledu interakcija; prijava netačnog odgovora pojavljuje se u listi prijavljenih problema
+
+- **Chatbot modul → Agent modul**  
+  Kada chatbot ne može odgovoriti (pouzdanost ispod 70%), pitanje se pojavljuje u agentovom modulu s kompletnim kontekstom razgovora unutar 10 sekundi (NFR-5)
+
+- **Agent modul → Database → Korisnik**  
+  Agentov odgovor se pohranjuje, status pitanja mijenja se u *"Odgovoreno"* i korisnik dobija obavijest
+---
+
+### Sistemsko testiranje
+
+Sistemsko testiranje verificira kompletan sistem kao cjelinu u okruženju što bližem produkcijskom. Pokriva end-to-end tokove i nefunkcionalne zahtjeve.
+
+| Atribut | Opis |
+|--------|------|
+| Cilj | Verificirati cjelokupni sistem u realističnom okruženju – funkcionalni i nefunkcionalni zahtjevi |
+| Ko testira | QA tim / tester |
+| Kada | U fazi stabilizacije sistema (Sprint 11) |
+| Alati | Playwright / Cypress (E2E), k6 / JMeter (load testing) |
+
+ Šta se testira u okviru sistemskog testiranja:
+
+- **E2E tok unosa transkripta**  
+  Administrator uploaduje audio zapis → sistem šalje audio Speech-to-Text API-ju → transkript se prikazuje na pregled → administrator potvrđuje → transkript prolazi processing pipeline → embedding se pohranjuju u bazu znanja
+
+- **E2E tok chatbot interakcije**  
+  Korisnik se prijavljuje → piše pitanje → sistem maskira osjetljive podatke → pretražuje bazu znanja → šalje kontekst LLM-u → odgovor se prikazuje u roku od 3 sekunde (NFR-7) → korisnik ocjenjuje odgovor
+
+- **E2E tok eskalacije**  
+  Korisnik postavlja pitanje za koje chatbot ne može dati pouzdan odgovor (pouzdanost ispod 70%) → sistem prikazuje poruku o nesigurnom odgovoru → pitanje se eskalira agentu unutar 10 sekundi s kompletnim kontekstom (NFR-5, NFR-6)
+
+- **E2E tok poboljšanja baze znanja**  
+  Agent odgovara na eskaliranu interakciju → administrator pregleda i odobrava agentov odgovor → par pitanje/odgovor dodaje se u bazu znanja → chatbot može koristiti novi sadržaj za naredne upite (NFR-8)
+
+- **Load test (NFR-7, NFR-8)**  
+  Simulacija 100 simultanih korisnika koji postavljaju upite chatbotu; P95 vrijeme odziva mora ostati ispod 3 sekunde, a maksimalno odzivno vrijeme ne smije prelaziti 5 sekundi ni pri punom opterećenju — mjerenje na uzorku od minimum 1.000 zahtjeva
+
+- **Sigurnosni test (NFR-1, NFR-2)**  
+  Provjera odbijanja HTTP zahtjeva i TLS verzije min. 1.2; blokada naloga nakon 5 neuspjelih pokušaja; automatska odjava nakon 30 minuta neaktivnosti
+
+- **Test privatnosti (NFR-3, NFR-4)**  
+  Provjera da originalni nemaskirani transkripti nisu prisutni u bazi 24 sata nakon unosa; provjera da podaci korisnika koji je zatražio opt-out nisu u trening setu 7 dana nakon zahtjeva
+
+- **Test tačnosti (NFR-13)**  
+  Evaluacija chatbot odgovora na unaprijed definisanom skupu od minimalno 100 testnih pitanja s poznatim očekivanim odgovorima; stopa relevantnih odgovora mora biti najmanje 85%
+
+- **Test transparentnosti (NFR-14)**  
+  Provjera da AI identifikacijska poruka bude prikazana na početku svake konverzacije i ostaje vidljiva minimalno 5 sekundi ili dok korisnik ne potvrdi
+
+- **Test update modela (NFR-12)**  
+  Administrator dodaje nove transkripte i pokreće update baze znanja; cijeli proces mora biti završen u manje od 4 sata, a chatbot mora ostati dostupan korisnicima tokom cijelog procesa
+---
+
+### Prihvatno testiranje (UAT)
+
+Prihvatno testiranje provode krajnji korisnici ili njihovi predstavnici kako bi potvrdili da sistem zadovoljava njihove potrebe i poslovne zahtjeve prije puštanja u produkciju.
+
+| Atribut | Opis |
+|--------|------|
+| Cilj | Potvrditi da sistem ispunjava poslovne zahtjeve i da je spreman za produkciju |
+| Ko testira | Predstavnici krajnjih korisnika (korisnik call centra, agent, administrator) |
+| Kada | Na kraju razvojnog ciklusa, neposredno prije završne demonstracije (Sprint 12-13) |
+| Alati | Ručno testiranje uz predefinisane test scenarije zasnovane na user stories |
+
+ Šta se testira u okviru prihvatnog testiranja — po ulogama:
+
+- **Korisnik call centra**  
+  Prijava u sistem i pristup Chat UI-u; postavljanje tekstualnog pitanja i ocjena relevantnosti odgovora; glasovni unos pitanja putem mikrofona; provjera da sistem prikazuje AI identifikacijsku poruku na početku razgovora i da je vidljiva dovoljno dugo (NFR-14); ocjenjivanje odgovora (pozitivno i negativno) i ostavljanje komentara; prijava netačnog odgovora uz odabir kategorije; pregled vlastite historije razgovora; brisanje jednog i više zapisa iz historije; provjera obavijesti o maskiranju ličnih podataka
+
+- **Agent call centra**  
+  Prijava i pristup agentskom panelu; pregled liste pitanja koja čekaju odgovor — provjera ispravnosti prikazanih podataka (pitanje, datum, status); otvaranje pojedinačnog pitanja i uvid u kontekst razgovora; unos i slanje odgovora; provjera da se status pitanja mijenja u *"Odgovoreno"*; provjera da korisnik dobija obavijest o odgovoru
+
+- **Administrator**  
+  Prijava i pristup admin dashboardu; upload transkripata u TXT/PDF formatu i provjera pohrane; ručni unos transkripata putem forme; upload audio zapisa i pregled generisanog transkripta prije potvrde; pregled liste svih unesenih transkripata; pregled svih pitanja i odgovora korisnika s filterima po datumu i ocjeni; pregled liste prijavljenih problema i promjena statusa prijave; pregled i odobravanje agentovih odgovora za uključivanje u bazu znanja; provjera da chatbot daje relevantne odgovore na reprezentativnom skupu pitanja (NFR-13)
+---
+### Regresiono testiranje
+
+Regresiono testiranje se provodi kako bi se osiguralo da nove izmjene ili dodaci koda nisu narušili već verificirane funkcionalnosti sistema. Budući da se sistem razvija iterativno kroz nekoliko sprintova, svaki sprint uvodi nove inkremente koji potencijalno utiču na prethodno implementirane komponente.
+
+| Atribut | Opis |
+|---------|------|
+| Cilj | Verificirati da prethodno implementirane i testirane funkcionalnposti rade ispravno nakon svake nove izmjene koda |
+| Ko testira | Developeri i QA tim - automatizovano, uz povremenu ručnu provjeru kritičnih tokova |
+| Kada | Na kraju svakog sprinta, prije merge-a novih funkcionalnosti u glavnu granu; obavezno pri svakoj promjeni zajedničkih komponenti |
+| Alati | Jest (unit regresija), Playwright / Cypress (E2E regresija), CI/CD pipeline (GitHub Actions ili ekvivalent) |
+| Opseg | Kompletni skup prethodno polaznih test slučajeva (regression suite), s posebnim fokusom na zajedničke module |
+
+Posebno kritični scenariji za regresiono testiranje:
+- Svaka izmjena Authentication modula pokreće regresiju svih zaštićenih ruta i RBAC provjera
+- Izmjena Processing Pipeline-a (normalizacija, maskiranje, razdvajanje uloga) zahtjeva regresiju chatbot odgovora i embeddinga
+- Dodavanje novih transkripata u bazu znanja ne smije narušiti kvalitet postojećih RAG odgovora
+- Izmjena Feedback modula ne smije utjecati na logiku ocjenjivanja i prijave grešaka
+- Svaka promjena UI komponenti zahtijeva regresiju Chat UI-a, agent panela i admin dashboarda
+---
+### Penetracijsko testiranje
+
+Penetracijsko testiranje simulira napad na sistem s ciljem otkrivanja sigurnosnih ranjivosti prije nego što ih napadači mogu iskoristiti. Obzirom da sistem rukuje osjetljivim podacima korisnika call centra i implementira Role-Based Access Control za tri različite korisničke uloge, penetracijsko testiranje je obavezno za MVP.
+
+
+| Atribut | Opis |
+|--------|------|
+| **Cilj** | Identificirati sigurnosne ranjivosti sistema — neautorizovani pristup, curenje podataka, injektiranje i eskalacija privilegija |
+| **Ko testira** | QA tim uz korištenje automatizovanih sigurnosnih alata; po mogućnosti uz angažman eksternog sigurnosnog eksperta prije produkcije |
+| **Kada** | Nakon završetka implementacije svih sigurnosnih komponenti, obavezno prije završne demonstracije |
+| **Alati** | OWASP ZAP (automatizovano skeniranje), Burp Suite (interceptiranje zahtjeva), ručno testiranje autorizacijskih ruta |
+| **Veza s NFR** | NFR-1 (HTTPS/TLS), NFR-2 (RBAC), NFR-3 (maskiranje ličnih podataka), NFR-4 (opt-out mehanizam) |
+
+
+Ključni scenariji penetracijskog testiranja:
+
+- **RBAC eskalacija**  
+  Korisnik s ulogom *Korisnik* pokušava pristupiti admin rutama ili agentskim funkcijama
+
+- **Zaobilaženje autentifikacije**  
+  Direktan pristup zaštićenim endpointima bez tokena ili s isteklim tokenom; provjera automatske odjave nakon 30 minuta neaktivnosti (NFR-2)
+
+- **Brute force zaštita**  
+  Provjera da se nalog blokira nakon tačno 5 uzastopnih neuspjelih pokušaja prijave (NFR-2)
+
+- **TLS verzija**  
+  Provjera da sistem odbija konekcije s TLS verzijom ispod 1.2; skeniranje SSL Labs alatom (NFR-1)
+
+- **Curenje osjetljivih podataka**  
+  Provjera da li lični podaci (JMBG, telefon, ime) nisu vidljivi u API odgovorima, logovima ni u bazi u nemaskiranom obliku; provjera automatskog brisanja originalnih transkripata nakon 24h (NFR-3)
+
+- **SQL/NoSQL injekcija**  
+  Testiranje svih input polja (upload forme, chat input, search filteri) na injekcijske napade
+
+- **HTTPS provjera**  
+  Svi endpointi moraju odbijati HTTP zahtjeve i preusmjeravati na HTTPS (NFR-1)
+
+- **API autorizacija**  
+  Pozivi eksternim servisima (LLM API, Speech-to-Text) ne smiju eksponirati API ključeve u klijentskom kodu ili logovima
+---
+### UI testiranje
+
+UI testiranje verificira ispravnost i upotrebljivost korisničkih interfejsa sistema. Sistem ima tri različita interfejsa namijenjena različitim korisničkim ulogama, a NFR-10 eksplicitno zahtijeva da Chat UI bude intuitivan bez potrebe za dodatnom obukom. Pored toga, NFR-14 propisuje etičku i pravnu obavezu — chatbot mora jasno naznačiti da je AI asistent.
+
+| Atribut | Opis |
+|--------|------|
+| **Cilj** | Verificirati ispravnost prikaza, navigacije i interakcija u svim korisničkim interfejsima; osigurati usklađenost s NFR zahtjevima za upotrebljivost i transparentnost |
+| **Ko testira** | QA tim (automatizovano); krajnji korisnici (ručno u okviru UAT-a) |
+| **Kada** | Nakon implementacije svakog UI inkrementa; kompletna UI regresija na kraju svakog sprinta koji donosi UI izmjene |
+| **Alati** | Playwright / Cypress (automatizovani UI i E2E testovi), ručno testiranje za upotrebljivost i vizualnu provjeru |
+| **Veza s NFR** | NFR-10 (upotrebljivost bez obuke), NFR-14 (AI transparentnost — chatbot mora naznačiti da je AI) |
+
+
+
+UI testiranje pokriva tri odvojena interfejsa:
+
+- **Chat UI (korisnik call centra)**  
+  Polje za unos pitanja, prikaz odgovora, dugme za glasovni unos, opcija ocjene, forma za prijavu problema, prikaz historije razgovora;  
+  AI identifikacijska poruka mora biti vidljiva najmanje 5 sekundi ili dok korisnik ne potvrdi da je pročitao (NFR-14)
+
+- **Agent panel**  
+  Lista neodgovorenih pitanja s prikazom statusa, forma za unos odgovora, obavijest o uspješnom slanju, navigacija između pitanja
+
+- **Admin dashboard**  
+  Modul za upload i pregled transkripata, pregled pitanja i odgovora s filterima, lista prijavljenih problema s promjenom statusa, statistika ocjena
+
+
+
+ Dodatni fokusi UI testiranja:
+
+- **Upotrebljivost (NFR-10)**  
+  User testing sa najmanje 10 stvarnih korisnika — najmanje 80% mora uspješno postaviti pitanje i dobiti odgovor bez ikakve vanjske pomoći ili obuke
+
+- **Poruke o greškama**  
+  Moraju biti jasne, vidljive i smještene uz relevantno polje (validacija forme)
+
+- **Indikator napretka**  
+  Sistem mora prikazati indikator napretka pri dugotrajnim operacijama (upload audio, transkripcija, generisanje odgovora)
+
+- **Konzistentnost prikaza**  
+  Prikaz mora biti konzistentan na podržanim browserima (Chrome, Firefox, Edge)
+
+- **Responzivnost**  
+  Sučelje mora biti upotrebljivo na standardnim desktop rezolucijama
+  
+  ---
+
+## Šta se testira i na kojem nivou
+
+Tabela prikazuje pokrivenost testiranjem po funkcionalnim oblastima sistema. Za svaki nivo testiranja navedeno je šta se konkretno provjerava u okviru te funkcionalne oblasti, ili je naznačeno da taj nivo nije primjenjiv.  
+ 
+
+| Funkcionalna oblast / User Story | Unit | Integraciono | Sistemsko | Prihvatno |
+|--------------------------------|------|-------------|-----------|-----------|
+| US-5/6: Prijava i odjava iz sistema | Logika provjere kredencijala, hashiranje lozinke, generisanje tokena, logika blokiranja naloga nakon 5 neuspjelih pokušaja | Provjera RBAC-a - svaka uloga dobija ispravan dashboard; provjera da sesija ističe nakon 30 min neaktivnosti (NFR-2) | E2E: prijava, zaštićene rute, automatska odjava po isteku sesije, blokada naloga nakon 5 pokušaja (NFR-2) | Korisnik se prijavljuje i pristupa funkcijama svoje uloge; provjera odjave i blokade |
+| US-1: Upload transkripata (fajl) | Validacija formata (TXT, PDF prihvata; ostalo se odbija), provjera veličine | Fajl prolazi od upload modula do pohrane i processing pipeline-a | E2E: upload-> pohrana -> prikaz u listi transkripata | Administrator uploaduje realni transkript i provjerava rezultat |
+| US-2: Ručni unos transkripata | Validacija obaveznih polja, provjera minimalnih dužina i formata datuma | Djelimično - provjerava da se uneseni podaci ispravno pohranjuju u bazu | E2E: unos forme -> pohrana -> prikaz u listi | Administrator ručno unosi transkript i potvrđuje prikaz |
+| US-3: Validacija transkripata | Svako validaciono pravilo izolovano (prazna polja, format, minimalna dužina | Provjera da validacijske greške blokuju pohranu i vraćaju ispravan odgovor | Djelimično - provjera u okviru upload i unos scenarija | N/A - tehnička funkcionalnost, ne testira se direktno u UAT-u |
+| US-12: Konverzija audio u transkript | Djelimično - provjera da sistem prepoznaje format i pokreće konverziju | Audio API -> transkripcija -> pohrana generisanog teksta u sistem | E2E: upload audio -> prikaz transkripata -> administrator potvrđuje sadržaj | Administrator uploaduje audio poziv i pregledava generisani transkript |
+| US-7/8: Pregled i detalji transkripta | N/A - pretežno UI prikaz bez poslovne logike | Djelimično - provjera da se ispravni podaci učitavaju iz baze za prikaz | Prikaz liste, otvaranje detalja, provjera svih prikazanih polja | Administrator pregledava listu i otvara pojedinačni transkript |
+| US-19: Pretraga i filtriranje transkripta | Logika filtriranja i pretrage - ispravnost upita prema bazi | Djelimično - provjera da filteri vraćaju ispravne rezultate iz baze | E2E: primjena filtera, resret filtera, provjera praznih rezultata | Djelimično - administrator provjerava pretragu po ključnoj riječi |
+| US-9: Normalizacija teksta | Svaka normalizacijska operacija izolovano (razmaci, interpunkcija, znakovi) | Provjera da normalizovani tekst ispravno ulazi u naredne faze pipline-a | Djelimično - provjera u sklopu end-to-end toka obrade transkripata | N/A - interna tehnička obrada, nije vidljiva krajnjim korisnicima |
+| US-10: Razdvajanje po ulogama | Parser logika - ispravno razdvajanje redova s oznakama Agent/Korisnik | Provjera da razdvojeni segmenti ispravno ulaze u embedding pipeline | Djelimično - provjera u sklopu end-to-end toka obrade transkripata | N/A - interna tehnička obrada, nije vidljiva krajnjim korisnicima |
+| US-11: Maskiranje osjetljivih podataka | Regex/NLP detekcija JMBG, telefona i imena - sve varijante formata | Provjera da maskirani tekst ulazi u chatbot i da se original ne pohranjuje u log; provjera da originalni transkripti nisu prisutni u bazi nakon 24h (NFR-3) | Sigurnosni test: originalni podaci ne smiju se naći ni ulogovima ni u bazi; automatska provjera brisanja nakon 24h (NFR-3) | Djelimično - korisnik unosi poruku s osobnim podacima i potvrđuje obavijest o zamjeni |
+| US-4: Postavljanje pitanja chatbotu (tekst) | Logika slanja upita, provjera praznog polja, validacija inputa | Pitanja korisnika -> RAG pretraga -> LLM API -> prikaz odgovora; provjera da sistem signalizira nesigurnost kada je pouzdanost ispod 70% (NFR-6) | E2E: korisnik postavlja pitanje, sistem vraća odgovor u roku od 3 sekunde (NFR-7); provjera eskalacije pri pouzdanosti ispod 70% (NFR-6) | Korisnik postavlja stvarna pitanja i ocjenjuje relevantnost odgovora; provjera poruke o nesigurnom odgovoru |
+| US-13: Glasovni unos (Dictate) | Djelimično - provjera da sistem ispravno šalje audio Speech-to-Text API-ju| Speech-to-Text API -> pretvorba u tekst -> prikaz u input polju | E2E: korisnik govori pitanje, tekst se prikazuje i šalje chatbotu | Korisnik koristi glasovni unos i potvrđuje tačnost pretvorbe |
+| US-25: Pregled historije razgovora | N/A - pretežno UI prikaz | Djelimično - provjera da se historija ispravno učitava iz baze za prijavljenog korisnika | E2E: prikaz historije hronološkim redom, poruka kad nema historije | Korisnik otvara historiju i vidi prethodne razgovore |
+| US-26: Brisanje historije razgovora | Logika brisanja jednog i više zapisa, provjera potvrde brisanja | Djelimično - provjera da se zapis trajno uklanja iz baze | E2E: brisanje jednog i bulk delete, ažuriranje prikaza, provjera da zapis nije dostupan | Korisnik briše razgovore i potvrđuje da nisu vidljivi u historiji |
+| US-20: Admin pregled svih pitanja i odgovora | N/A - pretežno UI prikaz | Djelimično - provjera da administrator vidi interakcije svih korisnika uz ispravno filtriranje | E2E: prikaz interakcija, filtriranje po datumu i ocjeni, prazna lista | Administrator pregledava interakcije i filtrira po kriterijima |
+| US-14: Ocjena odgovora chatbota | Logika prihvatanja ocjene, validacija opsega, vezivanje za odgovor | Ocjena se pohranjuje u bazu i ispravno veže za konkretan chatbot odgovor | E2E: korisnik ocjenjuje odgovor, porvrda se prikazuje, ocjena vidljiva u admin panelu | Korisnik ocjenjuje odgovor i potvrđuje da je ocjena prihvaćena |
+| US-15: Komentar uz ocjenu | Validacija komentara - prazno polje odbija, ispravno vezivanje uz ocjenu | Djelimično - provjera da se komentar pohranjuje uz ocjenu u bazi | E2E: korisnik daje negativnu ocjenu, otvara se polje za komentar, komentar se šalje | Korisnik ostavlja komentar uz negativnu ocjenu i dobija potvrdu |
+| US-18: Pregled prosječne ocjene (admin) | Logika agregacije ocjena, filtriranje po vremenskom periodu | Djelimično - provjera da upit prema bazi vraća ispravne agregirane podatke | E2E: adminitrator mijenja vremenski period i vidi ažuriranu statistiku | Djelimično - administrator pregledava ocjene i provjerava trendove |
+| US-16: Prijava netačnog odgovora | Validacija forme - prazna prijava se odbija, obavezna polja se provjeravaju | Prijava se pohranjuje u bazu i ispravno veže za konkretan chatbot odgovor | E2E: korisnik prijavljuje problem, dobija potvrdu, prijava vidljiva u admin modulu | Korisnik prijavljuje netačan odgovor i potvrđuje prijem obavijesti |
+| US-17: Kategorizacija prijavljenog problema | Validacija da kategorija mora biti odabrana, provjera dostupnih kategorija | Djelimično - provjera da se odabrana kateogorija ispravno veže uz prijavu u bazi | E2E: forma za prijavu prikazuje kategorije, odabrana kategorija se pohranjuje | Korisnik odabire kategoriju greške i potvrđuje slanje prijave |
+| US-21/22: Lista i detalji prijavljenih problema | N/A - pretežno UI prikaz | Djelimično - provjera da administrator vidi sve prijave s ispravnim podacima | E2E: prikaz liste, otvaranje detalja, provjera svih polja (pitanje, odgovor, kategorija, datum) | Administrator otvara prijavu i provjerava sve prikazane informacije |
+| US-28: Promjena statusa prijave | Logika provjere validnih statusa, odbijanje nevalidnih vrijednosti | Djelimično - provjera da se promjena statusa reflektuje u bazi i u prikazu | E2E: administrator mijenja status, promjena je odmah vidljiva u listi prijava | Administrator mijenja status prijave i potvrđuje ažuriranje |
+| US-29: Filtriranje prijavljenih problema | Logika filtriranja po statusu, kategoriji i datumu | Djelimično - provjera da filtrirani upit vraća ispravne rezultate iz baze | E2E: primjena filtera, reset filtera, provjera praznih rezultata | Djelimično - administrator filtrira prijave i provjerava relevantnost rezultata |
+| US-23: Pregled neodgovorenih pitanja (agent) | N/A - pretežno UI prikaz | Djelimično - provjera da agent vidi samo pitanja sa statusom 'Čeka odgovor' | E2E: prikaz liste, sadržaj svakog zapisa (pitanje, datum, status), prazna lista | Agent otvara modul i vidi pitanja koja čekaju njegovu intervenciju |
+| US-24: Unos agentovog odgovora | Validacija praznog odgovora, provjera promjene statusa | Agentov odgovor se pohranjuje, status se mijenja u 'Odgovoreno', korisnik dobija obavijest | E2E: agent odgovara, korisnik dobija obavijest, status pitanja se ažurira | Agent unosi odgovor i korisnik potvrđuje prijem odgovora |
+| US-27: Upotreba agentovog odgovora za bazu znanja | Logika označavanja odgovora kao validnog, provjera odobravanja/odbijanja | Odobreni par pitanje/odgovor se ispravno dodaje u trening dataset u bazi | E2E: administrator odobrava odgovor, par se pojavljuje u bazi znanja | Administrator odobrava agentov odgovor i potvrđuje dodavanje u bazu znanja |
+| Izgradnja baze znanja (embedding, RAG) | Generisanje embeddinga za ulazni tekst, provjera dimenzija i formata vektora | Pipeline: tekst -> embedding -> pohrana u vektorsku bazu -> uspješan retrieval | E2E: upit chatbota pokreće pretragu, relevantni kontekst se šalje u LLM-u | N/A - interna tehnička komponenta, testira se indirektno kroz chatbot odgovore |
+| Preusmjeravanje na ljudskog agenta | Logika detekcije kada chatbot nema pouzdan odgovor (prag pouzdanosti 70% - NFR-6) | Chatbot eskalira pitanje u roku od 10 sekundi (NFR-5), ono se pojavljuje u agentovom modulu s punim kontekstom razgovora| E2E: korisnik postavlja pitanje van baze znanja, razgovor se eskalira agentu unutar 10s; mjerenje vremena preusmjeravanja (NFR-5) | Korisnik dobija obavijest o eskalaciji, agent vidi pitanje s kontekstom razgovora |
+| NFR: Sigurnost i HTTPS/TLS | N/A - ne testira se na unit nivou  | Provjera da svi endpointi rade isključivo putem HTTPS-a s TLS verzijom minimalno 1.2 (NFR-1); SSL Labs skeniranje | Penetracijsko: odbijanje HTTP zahtjeva, provjera TLS verzije na svim endpointima, security headeri (NFR-1); blokada naloga nakon 5 pokušaja, istek sesije nakon 30 min (NFR-2) | N/A - infrastrukturni zahtjev, ne testira se u UAT-u |
+| NFR: Performanse (odziv <3s, 100 korisnika) | N/A - ne testira se na unit nivou | N/A - zahtijeva realno opterećenje, ne može se testirati na unit/integ nivou | Load test s k6/JMeter: 100 simultanih korisnika, mjerenje p95 vremena odziva (<3s u 95% slučajeva na uzorku od 1000 zahtjeva - NFR-7); odziv ne smije prelaziti 5s ni pri punom opterećenju (NFR-8) | N/A - automatizovani load test, ne provodi se ručno u UAT-u |
+| NFR: Dostupnost 99%, rad 24/7 | N/A - ne testira se na unit nivou | N/A - zahtijeva dugotrajna mjerenja u produkcijskom okruženju | Monitoring uptime-a (max ~87% nedostupnosti godišnje - NFR-9); provjera oporavka nakon pada; verifikacija da se logovi čuvaju minimalno 12 mjeseci (NFR-9, NFR-11) | N/A - mjeri se kontinuiranim monitoringom, nije dio ručnog UAT-a |
+| NFR: Tačnost chatbota (>= 85%) | N/A - ne može se mjeriti na nivou pojedinačn funkcije | N/A - zahtijeva kompletan sistem s popunjenom bazom znanja | Evaluacija na referentnom setu od minimalno 100 testnih pitanja s očekivanim odgovorima; izračun stope tačnosti (NFR-13); provjera eskalacije pri pouzdanosti ispod 70% (NFR-6) | Korisnici procjenjuju relevantnost odgovora tokom UAT sesija; provjera da chatbot jasno naznačuje nesiguran odgovor |
+
+## Veza sa acceptance kriterijima
+
+Svaki test slučaj direktno je vezan za jedan ili više acceptance kriterija definisanih u dokumentu User Stories. Ovaj pristup osigurava da se nijedan acceptance kriterij ne preskoči i da postoji potpuna sljedivost od zahtjeva do testa.
+
+| TC ID | Acceptance Kriterij | User Story | Nivo testiranja |
+|------|--------------------|-----------|----------------|
+| TC-1-01 | Sistem prikazuje opciju za odabir fajla kada administrator pristupi modulu za upload | US-1: Upload transkripata | Sistemsko, Prihvatno |
+| TC-1-02 | Sistem pohranjuje transkript i prikazuje poruku o uspješnom uploadu pri učitavanju validnog fajla | US-1: Upload transkripata | Integraciono, Sistemsko |
+| TC-1-03 | Sistem prikazuje odgovarajuću poruku greške kada fajl nije validnog formata | US-1: Upload transkripata | Unit, Sistemsko |
+| TC-11-01 | Sistem detektuje i maskira ime, telefon i JMBG u poruci korisnika prije slanja chatbotu | US-11: Maskiranje podataka | Unit, Integraciono |
+| TC-11-02 | Sistem ne smije slati originalne nemaskirane podatke chatbotu niti ih pohranjivati u logovima | US-11: Maskiranje podataka | Unit, Sistemsko |
+| TC-4-01 | Sistem prikazuje polje za unos pitanja kada korisnik otvori chatbot sučelje | US-4: Postavljanje pitanja | Sistemsko, Prihvatno |
+| TC-4-02 | Sistem prikazuje odgovor chatbota kada korisnik unese pitanje i potvrdi slanje | US-4: Postavljanje pitanja | Integraciono, Sistemsko, Prihvatno |
+| TC-5-01 | Sistem preusmjerava korisnika na odgovarajući dashboard prema ulozi pri ispravnoj prijavi | US-5: Sign In | Unit, Integraciono, Prihvatno |
+| TC-5-02 | Sistem ne dozvoljava direktan pristup zaštićenim stranicama bez prijave | US-5: Sign In | Integraciono, Sistemsko |
+| TC-16-01 | Sistem prikazuje formu za prijavu kada korisnik odabere opciju "Prijavi problem" | US-16: Prijava netačnog odgovora | Sistemsko, Prihvatno |
+| TC-24-01 | Status pitanja mijenja se u "Odgovoreno" i korisnik biva obaviješten kada agent pošalje odgovor | US-24: Agentov odgovor | Integraciono, Sistemsko, Prihvatno |
+| TC-NFR-07 | Sistem odgovara u roku od 3 sekunde u 95% slučajeva pod opterećenjem | NFR-7: Performanse | Sistemsko |
+| TC-NFR-13 | Chatbot daje relevantne odgovore u najmanje 85% testiranih pitanja iz referentnog seta | NFR-13: Tačnost | Sistemsko, Prihvatno |
+
+## Način evidentiranja rezultata testiranja
+
+Rezultati testiranja evidentiraju se kroz strukturirane test case-ove koji su direktno povezani sa user story-ima i njihovim acceptance kriterijima.
+
+Za svaki test case bilježe se sljedeće informacije:
+| ID testa | Opis testa | Ulazni podaci | Očekivani rezultat | Stvarni rezultat | Status (PASS/FAIL) | ID bug-a | Opis greške | Prioritet greške | Datum izvršenja | Odgovorna osoba | Napomena |
+|----------|------------|---------------|--------------------|------------------|--------------------|----------|--------------|------------------|-----------------|------------------|----------|
+|          |            |               |                    |                  |                    |          |              |                  |                 |                  |          |
+
+
+
+---
+
+## Glavni rizici kvaliteta
+
+| ID | Rizik | Vjerovatnoća | Utjecaj | Strategija ublažavanja |
+|----|------|-------------|--------|-------------------------|
+| R-01 | Netačni ili nepouzdani odgovori chatbot-a | Srednja | Visok | Testiranje na unaprijed definisanom skupu pitanja; validacija odgovora i poređenje sa očekivanim rezultatima |
+| R-02 | Neispravno maskiranje osjetljivih podataka | Srednja | Visok | Testiranje na transkriptima sa ličnim podacima; provjera baze i logova da li su podaci maskirani |
+| R-03 | Neispravan fallback mehanizam | Srednja | Visok | Testiranje scenarija nesigurnih odgovora; provjera preusmjeravanja na agenta bez gubitka konteksta |
+| R-04 | Greške u obradi i pohrani transkripata | Srednja | Visok | Unit i integraciono testiranje parsiranja, validacije i spremanja transkripata |
+| R-05 | Neautorizovan pristup administratorskom dijelu sistema | Niska | Kritičan | Testiranje autentifikacije i RBAC-a; pokušaji neovlaštenog pristupa (penetration testiranje) |
+| R-06 | Pad performansi sistema pod opterećenjem | Srednja | Visok | Load i stress testiranje; simulacija više korisnika i mjerenje vremena odziva |
+| R-07 | Nedovoljna upotrebljivost korisničkog interfejsa | Srednja | Srednji | UI i user testing sa stvarnim korisnicima; analiza povratnih informacija |
+| R-08 | Regresije nakon izmjena sistema | Srednja | Visok | Automatizovani regresioni testovi; ponavljanje ključnih scenarija nakon svake izmjene |
+| R-09 | Neispravno evidentiranje korisničkog feedback-a | Niska | Srednji | Testiranje prijave netačnih odgovora i njihove obrade u administratorskom dijelu |
+| R-10 | Nedostupnost sistema ili pad stabilnosti | Niska | Srednji | Monitoring sistema, testiranje dostupnosti i fallback mehanizama |

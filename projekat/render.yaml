@@ -1,0 +1,95 @@
+# Render Blueprint — provisions the full backend stack with one click.
+# https://render.com/docs/blueprint-spec
+#
+# Usage: in the Render dashboard → New → Blueprint → connect this repo.
+# Render reads this file and creates the listed services. You still need to
+# fill in the secret env vars marked `sync: false` (Render will prompt you
+# in the UI when the blueprint is applied).
+
+services:
+  # FastAPI web service — public HTTPS endpoint.
+  - type: web
+    name: chatbot-backend
+    runtime: python
+    region: frankfurt
+    plan: free
+    rootDir: projekat/backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: APP_ENV
+        value: production
+      - key: SECRET_KEY
+        generateValue: true
+      - key: ACCESS_TOKEN_EXPIRE_MINUTES
+        value: 60
+      - key: DATABASE_URL
+        sync: false
+      - key: REDIS_URL
+        sync: false
+      - key: QDRANT_URL
+        sync: false
+      - key: QDRANT_API_KEY
+        sync: false
+      - key: QDRANT_COLLECTION_NAME
+        value: knowledge_base
+      - key: GROQ_API_KEY
+        sync: false
+      - key: EMBEDDING_MODEL
+        value: all-MiniLM-L6-v2
+      - key: LLM_MODEL
+        value: llama-3.1-70b-versatile
+      - key: WHISPER_MODEL
+        value: whisper-large-v3
+      - key: RAG_TOP_K
+        value: 5
+      - key: RAG_CONFIDENCE_THRESHOLD
+        value: 0.6
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_KEY
+        sync: false
+      - key: SUPABASE_BUCKET
+        value: supabucket
+      - key: ALLOWED_ORIGINS
+        sync: false
+
+  # Celery worker — picks up async transcription jobs.
+  - type: worker
+    name: chatbot-worker
+    runtime: python
+    region: frankfurt
+    plan: free
+    rootDir: projekat/backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: celery -A app.workers.celery_app worker --loglevel=info --concurrency=1
+    autoDeploy: true
+    envVars:
+      - key: APP_ENV
+        value: production
+      - key: DATABASE_URL
+        sync: false
+      - key: REDIS_URL
+        sync: false
+      - key: QDRANT_URL
+        sync: false
+      - key: QDRANT_API_KEY
+        sync: false
+      - key: QDRANT_COLLECTION_NAME
+        value: knowledge_base
+      - key: GROQ_API_KEY
+        sync: false
+      - key: EMBEDDING_MODEL
+        value: all-MiniLM-L6-v2
+      - key: LLM_MODEL
+        value: llama-3.1-70b-versatile
+      - key: WHISPER_MODEL
+        value: whisper-large-v3
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_KEY
+        sync: false
+      - key: SUPABASE_BUCKET
+        value: supabucket
